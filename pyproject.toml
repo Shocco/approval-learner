@@ -1,0 +1,14 @@
+[project]
+name = "approval-learner"
+version = "0.1.0"
+description = "SQLite-backed learning hook for Claude Code that auto-allows Bash commands based on prior approval history"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

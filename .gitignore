@@ -1,0 +1,24 @@
+# Virtual environments
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Pytest
+.pytest_cache/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+
+# Claude Code / AgentKits Memory
+.claude/
+.mcp.json
+CLAUDE.md
+
+# OS
+.DS_Store
+Thumbs.db
