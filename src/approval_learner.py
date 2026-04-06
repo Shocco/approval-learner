@@ -139,9 +139,15 @@ def _word_to_str(word) -> str:
     return "".join(result) if result else getattr(word, "value", str(word))
 
 
+_VALID_CMD_RE = re.compile(r'^[a-zA-Z0-9_./-]+$')
+
+
+def _is_valid_command(name: str) -> bool:
+    return bool(_VALID_CMD_RE.match(name)) and len(name) < 100
+
+
 def _extract_via_shlex(command: str) -> list[str]:
     """Fallback: split on shell operators and extract first word of each segment."""
-    import re
     import shlex
     segments = re.split(r'\s*(?:\|\||&&|[|;])\s*', command)
     commands = []
@@ -154,7 +160,9 @@ def _extract_via_shlex(command: str) -> list[str]:
         except ValueError:
             tokens = segment.split()
         if tokens:
-            commands.append(Path(tokens[0]).name)
+            name = Path(tokens[0]).name
+            if _is_valid_command(name):
+                commands.append(name)
     return commands
 
 
@@ -328,7 +336,8 @@ class ApprovalDB:
         if idx >= len(parts):
             return ""
         first_word = parts[idx]
-        return Path(first_word).name
+        name = Path(first_word).name
+        return name if _is_valid_command(name) else ""
 
 
 # --- Hook Handlers ---
@@ -427,6 +436,54 @@ def handle_pre_tool_use(input_data: dict, db_path: str | Path = DB_PATH) -> dict
                 }
 
         return {}
+    finally:
+        db.close()
+
+
+def handle_permission_denied(input_data: dict, db_path: str | Path = DB_PATH):
+    """Handle PermissionDenied hook: user explicitly denied the command.
+
+    Finds the most recent 'prompted' record for this command, updates it to
+    'deny', and increments deny_count in command_stats so the command can never
+    be auto-allowed.
+    """
+    tool_name = input_data.get("tool_name", "")
+    tool_input = input_data.get("tool_input", {})
+    command = tool_input.get("command", "")
+    working_dir = tool_input.get("cwd", input_data.get("cwd", ""))
+
+    if not command or tool_name != "Bash":
+        return
+
+    db = ApprovalDB(db_path)
+    try:
+        prompted = db.execute(
+            """SELECT id FROM approvals
+               WHERE command = ? AND decision = 'prompted'
+               ORDER BY timestamp DESC LIMIT 1""",
+            (command,),
+        ).fetchone()
+
+        if prompted:
+            db.execute(
+                "UPDATE approvals SET decision = 'deny' WHERE id = ?",
+                (prompted["id"],),
+            )
+        else:
+            db.record(tool_name, command, "deny", working_dir)
+
+        base = db._extract_base_command(command)
+        if base:
+            db.execute(
+                """INSERT INTO command_stats (base_command, deny_count, last_denied)
+                   VALUES (?, 1, ?)
+                   ON CONFLICT(base_command) DO UPDATE SET
+                     deny_count = deny_count + 1,
+                     last_denied = ?""",
+                (base, time.time(), time.time()),
+            )
+
+        db.conn.commit()
     finally:
         db.close()
 
@@ -597,6 +654,9 @@ def main():
         print(json.dumps(result))
     elif hook_event == "PermissionRequest":
         handle_permission_request(input_data)
+        print(json.dumps({}))
+    elif hook_event == "PermissionDenied":
+        handle_permission_denied(input_data)
         print(json.dumps({}))
     elif hook_event == "PostToolUse":
         handle_post_tool_use(input_data)

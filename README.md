@@ -15,10 +15,9 @@ Claude Code fires three hook events that Approval Learner listens to:
 | Hook | What it does |
 |------|-------------|
 | `PermissionRequest` | Records that Claude asked for approval (decision: `prompted`) |
+| `PermissionDenied` | Records that you denied the prompt. Updates record to `deny`, increments `deny_count` |
 | `PostToolUse` | Confirms the command ran — meaning you approved it. Updates record to `allow`, bumps stats |
 | `PreToolUse` | Checks if this command is already trusted. If so, returns `allow` before Claude even prompts you |
-
-Denials are detected by absence: if a `prompted` record is never confirmed by `PostToolUse`, it stays as `prompted` and is eventually reclassified as `denied` by the `stats` cleanup pass.
 
 ### Pipeline support
 
@@ -77,6 +76,18 @@ Add these entries (merge with any existing hooks you have):
       }
     ],
     "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ~/.claude/hooks/approval_learner.py",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PermissionDenied": [
       {
         "matcher": "Bash",
         "hooks": [
