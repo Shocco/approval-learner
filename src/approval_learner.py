@@ -13,12 +13,23 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import sqlite3
 import sys
 import time
+import traceback
 from pathlib import Path
+
+# --- Error Logging ---
+_LOG_PATH = Path.home() / ".claude" / "logs" / "approval_learner.log"
+_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    filename=str(_LOG_PATH),
+    level=logging.DEBUG,
+    format="%(asctime)s %(levelname)s %(message)s",
+)
 
 # --- Configuration ---
 
@@ -396,6 +407,7 @@ def handle_pre_tool_use(input_data: dict, db_path: str | Path = DB_PATH) -> dict
             if db.should_auto_allow_compound(command):
                 return {
                     "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                         "permissionDecisionReason":
                             f"Learned: all segments trusted ({', '.join(segments)})",
@@ -407,6 +419,7 @@ def handle_pre_tool_use(input_data: dict, db_path: str | Path = DB_PATH) -> dict
                 stats = db.get_stats(base)
                 return {
                     "hookSpecificOutput": {
+                        "hookEventName": "PreToolUse",
                         "permissionDecision": "allow",
                         "permissionDecisionReason":
                             f"Learned: {base} approved {stats['approve_count']}x",
@@ -593,4 +606,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        logging.error("Unhandled exception:\n%s", traceback.format_exc())
+        print(json.dumps({}))
+        sys.exit(0)
